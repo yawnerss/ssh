@@ -20,17 +20,17 @@ class VPSPortSSHBruteforcer:
         self.threads = threads
         self.timeout = timeout
         self.scan_queue = queue.Queue()
-        .brute_queue = queue.Queue()
+        self.brute_queue = queue.Queue()  # Fixed: removed the dot
         self.open_ssh = []
         self.found_creds = []
         self.failed_targets = []
         self.lock = threading.Lock()
         self.scanning = True
-        .brute_running = True
+        self.brute_running = True
         self.total_scanned = 0
         self.total_found = 0
         self.start_time = None
-        .total_targets = 0
+        self.total_targets = 0  # Fixed: removed the dot
         
         # Print banner
         self.print_banner()
